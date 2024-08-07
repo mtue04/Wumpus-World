@@ -1,5 +1,7 @@
+import pygame
 from program import *
-
+from agent import Agent
+from algorithm import AgentBrain
 
 class Button:
     def __init__(self, x, y, width, height, text, color, text_color, font):
@@ -18,7 +20,6 @@ class Button:
     def is_clicked(self, pos):
         return self.rect.collidepoint(pos)
 
-
 class Game:
     def __init__(self):
         pygame.init()
@@ -33,19 +34,20 @@ class Game:
 
     def reset_game(self):
         self.map_type = 0
-        self.map_size = None
         self.map = None
+        self.agent = None
+        self.agent_brain = None
 
     def main_menu(self):
         title = self.title_font.render(CAPTION, True, BLUE)
         title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 75))
 
-        show_button = Button(
+        play_button = Button(
             SCREEN_WIDTH// 2 - 150,
             175,
             300,
             100,
-            "SHOW",
+            "PLAY",
             BLUE,
             WHITE,
             self.button_font,
@@ -78,8 +80,8 @@ class Game:
                 if event.type == pygame.QUIT:
                     return "QUIT"
                 if event.type == pygame.MOUSEBUTTONDOWN:
-                    if show_button.is_clicked(event.pos):
-                        return "SHOW"
+                    if play_button.is_clicked(event.pos):
+                        return "PLAY"
                     if settings_button.is_clicked(event.pos):
                         return "SETTINGS"
                     if quit_button.is_clicked(event.pos):
@@ -87,7 +89,7 @@ class Game:
             
             self.screen.fill(WHITE)
             self.screen.blit(title, title_rect)
-            show_button.draw(self.screen)
+            play_button.draw(self.screen)
             settings_button.draw(self.screen)
             quit_button.draw(self.screen)
 
@@ -140,15 +142,84 @@ class Game:
             pygame.display.flip()
             self.clock.tick(FPS)
 
-    def show_game(self):
-        # Initialize map
+    def play_game(self):
+        # Initialize map and agent
         self.map = Map()
         self.map.load_map(MAP_LIST[self.map_type])
+        self.agent = Agent(self.map)
+        self.agent_brain = AgentBrain(self.map)
         
         # Calculate cell size
         cell_size = SCREEN_HEIGHT // self.map.size
         
         # Load images
+        images = self.load_images(cell_size)
+        
+        game_over = False
+        while not game_over:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                    return "QUIT"
+
+            if not game_over:
+                # Get agent's perceptions
+                current_cell = self.map.get_cell(*self.map.agent_position)
+                perceptions = self.agent.perceive(current_cell)
+                
+                # Agent makes a decision
+                action = self.agent.act(perceptions)
+
+                # Update game state based on action
+                if action == Action.MOVE_FORWARD:
+                    new_cell = self.map.get_cell(*self.map.agent_position)
+                        
+                    # Check for game over conditions
+                    if Object.WUMPUS in new_cell.contents or Object.PIT in new_cell.contents:
+                        self.agent.die()
+                        game_over = True
+                    elif Object.GOLD in new_cell.contents:
+                        self.agent.has_gold = True
+                        new_cell.remove_content(Object.GOLD)
+                    elif Object.POISONOUS_GAS in new_cell.contents:
+                        self.agent.health = max(0, self.agent.health - 25)
+                        if self.agent.health == 0:
+                            self.agent.die()
+                            game_over = True
+                    elif Object.HEALING_POTIONS in new_cell.contents:
+                        self.agent.health = min(100, self.agent.health + 25)
+                        new_cell.remove_content(Object.HEALING_POTIONS)
+
+                elif action in [Action.TURN_LEFT, Action.TURN_RIGHT]:
+                    self.agent.update_position(action)
+
+                elif action == Action.SHOOT:
+                    pass
+                
+                elif action == Action.GRAB_G:
+                    current_cell.remove_content(Object.GOLD)
+                    self.agent.has_gold = True
+
+                elif action == Action.GRAB_HP:
+                    current_cell.remove_content(Object.HEALING_POTIONS)
+                    self.agent.health = min(100, self.agent.health + 25)
+
+                # Check if agent wants to climb out
+                if self.map.agent_position == (9, 0) and self.agent.has_gold:
+                    game_over = True
+
+            
+            self.draw_game(images, cell_size, self.agent, self.map)
+            pygame.display.flip()
+            self.clock.tick(FPS)
+
+        # Game over, display final score
+        self.display_game_over()
+        
+        # Write output
+        # output_file = f"output{self.map_type + 1}.txt"
+        # self.agent_brain.write_output(output_file, self.agent.score)
+
+    def load_images(self, cell_size):
         images = {
             'undiscovered': pygame.image.load(IMG_UNDISCOVERED_CELL).convert_alpha(),
             'discovered': pygame.image.load(IMG_DISCOVERED_CELL).convert_alpha(),
@@ -161,91 +232,116 @@ class Game:
             'glow': pygame.image.load(IMG_GLOW).convert_alpha(),
             'stench': pygame.image.load(IMG_STENCH).convert_alpha(),
             'whiff': pygame.image.load(IMG_WHIFF).convert_alpha(),
-            'scream': pygame.image.load(IMG_SCREAM).convert_alpha(),
-            'agent': pygame.image.load(IMG_AGENT_UP).convert_alpha()
+            'scream': pygame.image.load(IMG_SCREAM).convert_alpha()
         }
         
         # Resize images
         for key in images:
             images[key] = pygame.transform.scale(images[key], (cell_size, cell_size))
         
-        while True:
+        return images
+
+    def draw_game(self, images, cell_size, agent, map):
+        self.screen.fill(WHITE)
+
+        # Draw grid
+        for row in range(self.map.size):
+            for col in range(self.map.size):
+                cell = self.map.grid[row][col]
+                x = col * cell_size
+                y = row * cell_size
+
+                # Draw base cell
+                if cell.cell_type == CellType.UNDISCOVERED:
+                    self.screen.blit(images['undiscovered'], (x, y))
+                else:
+                    self.screen.blit(images['discovered'], (x, y))
+                
+                    # Draw cell contents
+                    if Object.PIT in cell.contents:
+                        self.screen.blit(images['pit'], (x, y))
+                    elif Object.GOLD in cell.contents:
+                        self.screen.blit(images['gold'], (x, y))
+                    elif Object.WUMPUS in cell.contents:
+                        self.screen.blit(images['wumpus'], (x, y))
+                    elif Object.POISONOUS_GAS in cell.contents:
+                        self.screen.blit(images['poisonous_gas'], (x, y))
+                    elif Object.HEALING_POTIONS in cell.contents:
+                        self.screen.blit(images['healing_potions'], (x, y))
+                    
+                    # Draw perceptions
+                    else:
+                        if Object.BREEZE in cell.contents:
+                            self.screen.blit(images['breeze'], (x, y))
+                        if Object.GLOW in cell.contents:
+                            self.screen.blit(images['glow'], (x, y))
+                        if Object.STENCH in cell.contents:
+                            self.screen.blit(images['stench'], (x, y))
+                        if Object.WHIFF in cell.contents:
+                            self.screen.blit(images['whiff'], (x, y))
+                        if Object.SCREAM in cell.contents:
+                            self.screen.blit(images['scream'], (x, y))
+                
+                # Draw agent
+                if map.agent_position == (row, col):
+                    self.screen.blit(agent.image, (x, y))
+
+        # Draw grid lines
+        for i in range(self.map.size):
+            pygame.draw.line(self.screen, BLACK, (0, i * cell_size), (SCREEN_HEIGHT, i * cell_size))
+            pygame.draw.line(self.screen, BLACK, (i * cell_size, 0), (i * cell_size, SCREEN_HEIGHT))
+        
+        # Draw information board
+        self.draw_info_board()
+
+    def draw_info_board(self):
+        info_surface = pygame.Surface((SCREEN_WIDTH - SCREEN_HEIGHT, SCREEN_HEIGHT))
+        info_surface.fill(LIGHT_GRAY)
+        
+        # Add game information
+        title = self.text_font.render("GAME INFO", True, BLACK)
+        info_surface.blit(title, ((SCREEN_WIDTH - SCREEN_HEIGHT - title.get_width()) // 2, 50))
+        map_info = self.text_font.render(f"MAP: {self.map_type + 1}", True, BLACK)
+        info_surface.blit(map_info, ((SCREEN_WIDTH - SCREEN_HEIGHT - map_info.get_width()) // 2, 150))
+        score_info = self.text_font.render(f"SCORE: {self.agent.score}", True, BLACK)
+        info_surface.blit(score_info, ((SCREEN_WIDTH - SCREEN_HEIGHT - score_info.get_width()) // 2, 200))
+        health_info = self.text_font.render(f"HEALTH: {self.agent.health}", True, BLACK)
+        info_surface.blit(health_info, ((SCREEN_WIDTH - SCREEN_HEIGHT - health_info.get_width()) // 2, 250))
+        
+        self.screen.blit(info_surface, (SCREEN_HEIGHT, 0))
+
+    def display_game_over(self):
+        game_over_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        game_over_surface.set_alpha(200)
+        game_over_surface.fill(BLACK)
+        self.screen.blit(game_over_surface, (0, 0))
+
+        game_over_text = self.title_font.render("GAME OVER", True, WHITE)
+        game_over_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
+        self.screen.blit(game_over_text, game_over_rect)
+
+        score_text = self.text_font.render(f"Final Score: {self.agent.score}", True, WHITE)
+        score_rect = score_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50))
+        self.screen.blit(score_text, score_rect)
+
+        pygame.display.flip()
+
+        waiting = True
+        while waiting:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                     return "QUIT"
+                if event.type == pygame.MOUSEBUTTONDOWN or event.type == pygame.KEYDOWN:
+                    waiting = False
 
-            self.screen.fill(WHITE)
-
-            # Draw grid
-            for row in range(self.map.size):
-                for col in range(self.map.size):
-                    cell = self.map.grid[row][col]
-                    x = col * cell_size
-                    y = row * cell_size
-
-                    # Draw base cell
-                    if cell.cell_type == CellType.UNDISCOVERED:
-                        self.screen.blit(images['undiscovered'], (x, y))
-                    else:
-                        self.screen.blit(images['discovered'], (x, y))
-                    
-                        # Draw cell contents
-                        if Object.PIT in cell.contents:
-                            self.screen.blit(images['pit'], (x, y))
-                        elif Object.GOLD in cell.contents:
-                            self.screen.blit(images['gold'], (x, y))
-                        elif Object.WUMPUS in cell.contents:
-                            self.screen.blit(images['wumpus'], (x, y))
-                        elif Object.POISONOUS_GAS in cell.contents:
-                            self.screen.blit(images['poisonous_gas'], (x, y))
-                        elif Object.HEALING_POTIONS in cell.contents:
-                            self.screen.blit(images['healing_potions'], (x, y))
-                        
-                        # Draw perceptions
-                        else:
-                            if Object.BREEZE in cell.contents:
-                                self.screen.blit(pygame.transform.scale(images['breeze'], (cell_size, cell_size)), (x, y))
-                            if Object.GLOW in cell.contents:
-                                self.screen.blit(pygame.transform.scale(images['glow'], (cell_size, cell_size)), (x, y))
-                            if Object.STENCH in cell.contents:
-                                self.screen.blit(pygame.transform.scale(images['stench'], (cell_size, cell_size)), (x, y))
-                            if Object.WHIFF in cell.contents:
-                                self.screen.blit(pygame.transform.scale(images['whiff'], (cell_size, cell_size)), (x, y))
-                            if Object.SCREAM in cell.contents:
-                                self.screen.blit(images['scream'], (x, y))
-                    
-                    # Draw agent
-                    if (col, row) == self.map.agent_position:
-                        self.screen.blit(images['agent'], (x, y))
-
-            # Draw grid line
-            for i in range(self.map.size):
-                pygame.draw.line(self.screen, BLACK, (0, i * cell_size), (SCREEN_HEIGHT, i * cell_size))
-                pygame.draw.line(self.screen, BLACK, (i * cell_size, 0), (i * cell_size, SCREEN_HEIGHT))
-            
-            # Draw information board
-            info_surface = pygame.Surface((SCREEN_WIDTH - SCREEN_HEIGHT, SCREEN_HEIGHT))
-            info_surface.fill(LIGHT_GRAY)
-            
-            # Add game information
-            title = self.text_font.render("GAME INFO", True, BLACK)
-            info_surface.blit(title, ((SCREEN_WIDTH - SCREEN_HEIGHT - title.get_width()) // 2, 50))
-            map_info = self.text_font.render(f"MAP: {self.map_type + 1}", True, BLACK)
-            info_surface.blit(map_info, ((SCREEN_WIDTH - SCREEN_HEIGHT - map_info.get_width()) // 2, 150))
-            # score_info = self.text_font.render(f"SCORE: {self.map.score}", True, BLACK)
-            # info_surface.blit(score_info, ((SCREEN_WIDTH - SCREEN_HEIGHT - score_info.get_width()) // 2, 200))
-            
-            self.screen.blit(info_surface, (SCREEN_HEIGHT, 0))
-
-            pygame.display.flip()
-            self.clock.tick(FPS)    
-    
     def run(self):
         while True:
             action = self.main_menu()
             if action == "QUIT":
                 break
-            elif action == "SHOW":
-                self.show_game()
+            elif action == "PLAY":
+                self.play_game()
             elif action == "SETTINGS":
                 self.settings_menu()
+
+        pygame.quit()

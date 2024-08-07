@@ -5,7 +5,7 @@ import pygame
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 CAPTION = "Wumpus World"
-FPS = 60
+FPS = 10
 
 # Colors
 WHITE = "#FFFFFF"
@@ -87,3 +87,21 @@ class Object(Enum):
     WHIFF = "W_H"
     GLOW = "G_L"
     SCREAM = "S_C"
+
+
+# Actions
+class Action(Enum):
+    MOVE_FORWARD = auto()
+    TURN_LEFT = auto()
+    TURN_RIGHT = auto()
+    SHOOT = auto()
+    GRAB_G = auto()
+    GRAB_HP = auto()
+
+
+# Directions
+class Direction(Enum):
+    UP = auto()
+    DOWN = auto()
+    LEFT = auto()
+    RIGHT = auto()
