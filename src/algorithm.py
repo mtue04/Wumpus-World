@@ -2,7 +2,7 @@ from pysat.solvers import Glucose3
 from utils import *
 from program import Map, Cell
 from typing import List, Tuple, Set
-
+from collections import deque
 
 class AgentBrain:
     def __init__(self, map: Map):
@@ -13,6 +13,8 @@ class AgentBrain:
         self.dangerous_cells = set()
         self.unknown_cells = {(x, y) for x in range(map.size) for y in range(map.size)}
         self.direction = Direction.UP
+        self.has_gold = False
+        self.last_positions = deque(maxlen=3)  # Store last 3 positions to detect loops
         self.initialize_knowledge_base()
 
     def initialize_knowledge_base(self):
@@ -30,13 +32,15 @@ class AgentBrain:
             Object.GOLD: (x * self.map.size + y) * 6 + 4,
             Object.HEALING_POTIONS: (x * self.map.size + y) * 6 + 5,
             Object.STENCH: (x * self.map.size + y) * 6 + 6,
+            Object.BREEZE: (x * self.map.size + y) * 6 + 7,
+            Object.WHIFF: (x * self.map.size + y) * 6 + 8,
+            Object.GLOW: (x * self.map.size + y) * 6 + 9,
         }
 
     def update_knowledge(self, perceptions: Set[Object]):
         x, y = self.map.agent_position
         cell_id = self.get_cell_id(x, y)
 
-        # Mark current cell as visited and safe
         self.visited_cells.add((x, y))
         self.safe_cells.add((x, y))
         self.unknown_cells.discard((x, y))
@@ -46,45 +50,23 @@ class AgentBrain:
 
         adjacent_cells = self.get_adjacent_cells(x, y)
 
-        # Update knowledge based on perceptions
         self.update_perception(Object.BREEZE, Object.PIT, perceptions, adjacent_cells)
         self.update_perception(Object.STENCH, Object.WUMPUS, perceptions, adjacent_cells)
         self.update_perception(Object.WHIFF, Object.POISONOUS_GAS, perceptions, adjacent_cells)
         self.update_perception(Object.GLOW, Object.HEALING_POTIONS, perceptions, adjacent_cells)
 
-        # Mark adjacent cells as potentially dangerous based on perceptions
-        if Object.BREEZE in perceptions:
-            for adj in adjacent_cells:
-                self.dangerous_cells.add(adj)
-                self.unknown_cells.discard(adj)
-                self.safe_cells.discard(adj)
-        if Object.STENCH in perceptions:
-            for adj in adjacent_cells:
-                self.dangerous_cells.add(adj)
-                self.unknown_cells.discard(adj)
-                self.safe_cells.discard(adj)
-        if Object.WHIFF in perceptions:
-            for adj in adjacent_cells:
-                self.dangerous_cells.add(adj)
-                self.unknown_cells.discard(adj)
-                self.safe_cells.discard(adj)
-
-        # Mark adjacent cells as safe if no danger perceptions
-        if Object.BREEZE not in perceptions:
-            for adj in adjacent_cells:
-                if adj not in self.visited_cells and adj not in self.dangerous_cells:
-                    self.safe_cells.add(adj)
-                    self.unknown_cells.discard(adj)
-        if Object.STENCH not in perceptions:
-            for adj in adjacent_cells:
-                if adj not in self.visited_cells and adj not in self.dangerous_cells:
-                    self.safe_cells.add(adj)
-                    self.unknown_cells.discard(adj)
-        if Object.WHIFF not in perceptions:
-            for adj in adjacent_cells:
-                if adj not in self.visited_cells and adj not in self.dangerous_cells:
-                    self.safe_cells.add(adj)
-                    self.unknown_cells.discard(adj)
+        for perception, danger in [(Object.BREEZE, Object.PIT), (Object.STENCH, Object.WUMPUS), (Object.WHIFF, Object.POISONOUS_GAS)]:
+            if perception in perceptions:
+                for adj in adjacent_cells:
+                    if adj not in self.visited_cells:
+                        self.dangerous_cells.add(adj)
+                        self.unknown_cells.discard(adj)
+                        self.safe_cells.discard(adj)
+            else:
+                for adj in adjacent_cells:
+                    if adj not in self.visited_cells and adj not in self.dangerous_cells:
+                        self.safe_cells.add(adj)
+                        self.unknown_cells.discard(adj)
 
     def update_perception(self, perception: Object, danger: Object, perceptions: Set[Object], adjacent_cells: List[Tuple[int, int]]):
         if perception in perceptions:
@@ -118,140 +100,184 @@ class AgentBrain:
 
     def make_decision(self, perceptions: Set[Object]) -> Action:
         self.update_knowledge(perceptions)
+        self.last_positions.append(self.map.agent_position)
 
-        if Object.GOLD in perceptions:
+        if self.map.agent_position in self.map.gold_positions:
             return Action.GRAB_G
-        if Object.HEALING_POTIONS in perceptions:
+        if self.map.agent_position in self.map.healing_positions:
             return Action.GRAB_HP
         
-        # Check for stench and shoot if Wumpus is suspected nearby
         if Object.STENCH in perceptions:
             return Action.SHOOT
 
-        # If there are unvisited safe cells, move to one of them
-        if self.safe_cells - self.visited_cells:
-            target = min(
-                self.safe_cells - self.visited_cells,
-                key=lambda cell: self.manhattan_distance(self.map.agent_position, cell),
-            )
-            return self.move_towards(target)
+        safe_unvisited = self.safe_cells - self.visited_cells
+        # print("safe unvisited: ",safe_unvisited)
+        if safe_unvisited:
+            return self.move_towards_safe(safe_unvisited)
+
+        if self.unknown_cells and self.has_gold == False:
+            return self.explore_unknown()
+        elif self.has_gold:
+            return self.return_to_start()
+
+        # Back to start
+        if self.has_gold and self.map.agent_position == (self.map.size - 1, 0):
+            return self.CLIMB
+
+        return self.backtrack()
+
+    def move_towards_safe(self, safe_cells: Set[Tuple[int, int]]) -> Action:
+        current_x, current_y = self.map.agent_position
+        for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
+            target = (current_x + dx, current_y + dy)
+            if target in safe_cells and target not in self.last_positions:
+                return self.move_towards(target)
+
+        # If there is no safe cell around, move to the next safe cell
+        unvisited_safe = safe_cells - self.visited_cells
+        if unvisited_safe:
+            nearest_safe = min(unvisited_safe, key=lambda cell: self.manhattan_distance(self.map.agent_position, cell))
+            path = self.find_safe_path(self.map.agent_position, nearest_safe)
+            if path:
+                return self.move_towards(path[1])
+        
+        return self.move_towards(next(iter(safe_cells)))
+
+    def find_safe_path(self, start: Tuple[int, int], goal: Tuple[int, int]) -> List[Tuple[int, int]]:
+        queue = deque([(start, [start])])
+        visited = set()
+
+        while queue:
+            (x, y), path = queue.popleft()
+            if (x, y) == goal:
+                return path
+
+            if (x, y) not in visited:
+                visited.add((x, y))
+                for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
+                    next_cell = (x + dx, y + dy)
+                    if (next_cell in self.safe_cells and 
+                        next_cell not in visited and 
+                        0 <= next_cell[0] < self.map.size and 
+                        0 <= next_cell[1] < self.map.size):
+                        queue.append((next_cell, path + [next_cell]))
+
+        return []  # No path found
+
+    def explore_unknown(self) -> Action:
+        current_x, current_y = self.map.agent_position
+        for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
+            target = (current_x + dx, current_y + dy)
+            if target in self.unknown_cells and target not in self.dangerous_cells and target not in self.last_positions:
+                return self.move_towards(target)
+        
+        safe_unknown = self.unknown_cells - self.dangerous_cells
+        if safe_unknown:
+            nearest_unknown = min(safe_unknown, key=lambda cell: self.manhattan_distance(self.map.agent_position, cell))
+            return self.move_towards(nearest_unknown)
+        
+        return self.backtrack()
+
+    def backtrack(self) -> Action:
+        if not self.visited_cells:
+            return Action.MOVE_FORWARD
+
+        target = min(self.visited_cells - set(self.last_positions), 
+                     key=lambda cell: self.manhattan_distance(self.map.agent_position, cell), 
+                     default=None)
+
+        if target is None:
+            target = max(self.visited_cells, 
+                         key=lambda cell: self.manhattan_distance(self.map.agent_position, cell))
+            
+        return self.move_towards(target)
     
-        # If no unvisited safe cells, consider taking a risk
-        if self.dangerous_cells:
-            least_dangerous = min(
-                self.dangerous_cells, key=lambda cell: self.danger_level(cell)
-            )
-            if self.danger_level(least_dangerous) < 0.5:
-                return self.move_towards(least_dangerous)
-
-        # If no good moves, try to backtrack
-        if self.visited_cells:
-            backtrack_target = max(
-                self.visited_cells,
-                key=lambda cell: self.manhattan_distance(self.map.agent_position, cell),
-            )
-            return self.move_towards(backtrack_target)
-
-        # If all else fails, make a random move
-        return Action.MOVE_FORWARD
-
-    def manhattan_distance(self, cell1: Tuple[int, int], cell2: Tuple[int, int]) -> int:
-        return abs(cell1[0] - cell2[0]) + abs(cell1[1] - cell2[1])
-
-    def danger_level(self, cell: Tuple[int, int]) -> float:
-        x, y = cell
-        cell_id = self.get_cell_id(x, y)
-        danger_count = sum(
-            [
-                self.knowledge_base.solve(assumptions=[cell_id[obj]])
-                for obj in [Object.WUMPUS, Object.PIT, Object.POISONOUS_GAS]
-            ]
-        )
-        return danger_count / 3
-
+    def return_to_start(self) -> Action:
+        # Find path to start position
+        start_position = (self.map.size - 1, 0)  # Pos (9, 0)
+        path = self.find_safe_path(self.map.agent_position, start_position)
+        if path:
+            return self.move_towards(path[1])
+    
     def move_towards(self, target: Tuple[int, int]) -> Action:
         dx = target[0] - self.map.agent_position[0]
         dy = target[1] - self.map.agent_position[1]
         
-        if dx > 0: # Move down
-            if self.direction == Direction.DOWN:
-                return Action.MOVE_FORWARD
-            elif self.direction == Direction.UP:
-                self.direction = Direction.RIGHT
-                return Action.TURN_RIGHT
-            elif self.direction == Direction.LEFT:
-                self.direction = Direction.DOWN
-                return Action.TURN_RIGHT
-            elif self.direction == Direction.RIGHT:
-                self.direction = Direction.DOWN
-                return Action.TURN_LEFT
-            
-        elif dx < 0: # Move up
-            if self.direction == Direction.UP:
-                return Action.MOVE_FORWARD
-            elif self.direction == Direction.DOWN:
-                self.direction = Direction.RIGHT
-                return Action.TURN_RIGHT
-            elif self.direction == Direction.RIGHT:
-                self.direction = Direction.UP
-                return Action.TURN_LEFT
-            elif self.direction == Direction.LEFT:
-                self.direction = Direction.UP
-                return Action.TURN_RIGHT
-            
-        elif dy < 0: # Move left
-            if self.direction == Direction.LEFT:
-                return Action.MOVE_FORWARD
-            elif self.direction == Direction.RIGHT:
-                self.direction = Direction.UP
-                return Action.TURN_LEFT
-            elif self.direction == Direction.UP:
-                self.direction = Direction.LEFT
-                return Action.TURN_LEFT
-            elif self.direction == Direction.DOWN:
-                self.direction = Direction.LEFT
-                return Action.TURN_RIGHT
-            
-        elif dy > 0: # Move right
-            if self.direction == Direction.RIGHT:
-                return Action.MOVE_FORWARD
-            elif self.direction == Direction.LEFT:
-                self.direction = Direction.UP
-                return Action.TURN_RIGHT
-            elif self.direction == Direction.UP:
-                self.direction = Direction.RIGHT
-                return Action.TURN_RIGHT
-            elif self.direction == Direction.DOWN:
-                self.direction = Direction.RIGHT
-                return Action.TURN_LEFT
+        if dx > 0:  # Move down
+            return self.turn_to_direction(Direction.DOWN)
+        elif dx < 0:  # Move up
+            return self.turn_to_direction(Direction.UP)
+        elif dy < 0:  # Move left
+            return self.turn_to_direction(Direction.LEFT)
+        elif dy > 0:  # Move right
+            return self.turn_to_direction(Direction.RIGHT)
 
         return Action.MOVE_FORWARD
-    
+
+    def turn_to_direction(self, target_direction: Direction) -> Action:
+        if self.direction == target_direction:
+            return Action.MOVE_FORWARD
+        
+        turns = {
+            (Direction.UP, Direction.RIGHT): Action.TURN_RIGHT,
+            (Direction.UP, Direction.DOWN): Action.TURN_RIGHT,
+            (Direction.UP, Direction.LEFT): Action.TURN_LEFT,
+            (Direction.RIGHT, Direction.DOWN): Action.TURN_RIGHT,
+            (Direction.RIGHT, Direction.LEFT): Action.TURN_RIGHT,
+            (Direction.RIGHT, Direction.UP): Action.TURN_LEFT,
+            (Direction.DOWN, Direction.LEFT): Action.TURN_RIGHT,
+            (Direction.DOWN, Direction.UP): Action.TURN_RIGHT,
+            (Direction.DOWN, Direction.RIGHT): Action.TURN_LEFT,
+            (Direction.LEFT, Direction.UP): Action.TURN_RIGHT,
+            (Direction.LEFT, Direction.RIGHT): Action.TURN_RIGHT,
+            (Direction.LEFT, Direction.DOWN): Action.TURN_LEFT,
+        }
+        
+        self.direction = target_direction
+        return turns.get((self.direction, target_direction), Action.MOVE_FORWARD)
+
     def process_successful_shot(self, wumpus_position: Tuple[int, int]):
         x, y = wumpus_position
         cell_id = self.get_cell_id(x, y)
 
-        # Remove Wumpus from the knowledge base
         self.knowledge_base.add_clause([-cell_id[Object.WUMPUS]])
-
-        # Mark the cell as safe
         self.safe_cells.add(wumpus_position)
         self.dangerous_cells.discard(wumpus_position)
         self.unknown_cells.discard(wumpus_position)
 
-        # Update adjacent cells
         adjacent_cells = self.map.get_adjacent_cells(x, y)
         for ax, ay in adjacent_cells:
             adj_cell_id = self.get_cell_id(ax, ay)
-            # Remove Stench from adjacent cells in the knowledge base
             self.knowledge_base.add_clause([-adj_cell_id[Object.STENCH]])
 
-            # If the adjacent cell is not visited, mark it as safe if it's not dangerous for other reasons
             if (ax, ay) not in self.visited_cells and not self.is_dangerous(ax, ay):
                 self.safe_cells.add((ax, ay))
                 self.dangerous_cells.discard((ax, ay))
                 self.unknown_cells.discard((ax, ay))
 
+    def update_knowledge_after_grab(self, grabbed_object: Object, position: Tuple[int, int]):
+        x, y = position
+        cell_id = self.get_cell_id(x, y)
+
+        if grabbed_object == Object.GOLD:
+            self.knowledge_base.add_clause([-cell_id[Object.GOLD]])
+            self.has_gold = True
+        elif grabbed_object == Object.HEALING_POTIONS:
+            self.knowledge_base.add_clause([-cell_id[Object.HEALING_POTIONS]])
+            
+            # Remove GLOW from adjacent cells in the knowledge base
+            adjacent_cells = self.get_adjacent_cells(x, y)
+            for ax, ay in adjacent_cells:
+                adj_cell_id = self.get_cell_id(ax, ay)
+                self.knowledge_base.add_clause([-adj_cell_id[Object.GLOW]])
+
+        # Update safe cells and remove from unknown cells
+        self.safe_cells.add(position)
+        self.unknown_cells.discard(position)
+    
+    def manhattan_distance(self, cell1: Tuple[int, int], cell2: Tuple[int, int]) -> int:
+        return abs(cell1[0] - cell2[0]) + abs(cell1[1] - cell2[1])
+    
     # def write_output(self, output_file: str, score: int):
         # with open(output_file, "w") as f:
         #     f.write(f"Score: {score}\n\n")

@@ -46,7 +46,8 @@ class Map:
         self.grid: List[List[Cell]] = []
         self.matrix: List[List[str]] = []
         self.agent_position: Optional[Tuple[int, int]] = None
-        # self.gold_positions: List[Tuple[int, int]] = []
+        self.gold_positions: List[Tuple[int, int]] = []
+        self.healing_positions: List[Tuple[int, int]] = []
         # self.wumpus_positions: List[Tuple[int, int]] = []
 
     def load_map(self, filepath: str):
@@ -77,11 +78,12 @@ class Map:
             self.agent_position = (x, y)
             cell.add_content(Object.AGENT)
         elif char == "G":
-            # self.gold_positions.append((x, y))
+            self.gold_positions.append((x, y))
             cell.add_content(Object.GOLD)
         elif char == "P_G":
             cell.add_content(Object.POISONOUS_GAS)
         elif char == "H_P":
+            self.healing_positions.append((x, y))
             cell.add_content(Object.HEALING_POTIONS)
         else:
             raise ValueError(f"Invalid character: {char}")

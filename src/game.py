@@ -149,6 +149,10 @@ class Game:
         self.agent = Agent(self.map)
         self.agent_brain = AgentBrain(self.map)
         
+        first_cell = self.map.get_cell(*self.map.agent_position)
+        first_cell.discover()
+        first_cell.mark_visited()
+
         # Calculate cell size
         cell_size = SCREEN_HEIGHT // self.map.size
         
@@ -178,7 +182,7 @@ class Game:
                         self.agent.die()
                         game_over = True
                     elif Object.GOLD in new_cell.contents:
-                        self.agent.has_gold = True
+                        self.agent.brain.has_gold = True
                         new_cell.remove_content(Object.GOLD)
                     elif Object.POISONOUS_GAS in new_cell.contents:
                         self.agent.health = max(0, self.agent.health - 25)
@@ -186,8 +190,7 @@ class Game:
                             self.agent.die()
                             game_over = True
                     elif Object.HEALING_POTIONS in new_cell.contents:
-                        self.agent.health = min(100, self.agent.health + 25)
-                        new_cell.remove_content(Object.HEALING_POTIONS)
+                        pass
 
                 elif action in [Action.TURN_LEFT, Action.TURN_RIGHT]:
                     self.agent.update_position(action)
@@ -197,17 +200,15 @@ class Game:
                 
                 elif action == Action.GRAB_G:
                     current_cell.remove_content(Object.GOLD)
-                    self.agent.has_gold = True
+                    self.agent.brain.has_gold = True
 
                 elif action == Action.GRAB_HP:
-                    current_cell.remove_content(Object.HEALING_POTIONS)
                     self.agent.health = min(100, self.agent.health + 25)
 
                 # Check if agent wants to climb out
-                if self.map.agent_position == (9, 0) and self.agent.has_gold:
+                if self.map.agent_position == (9, 0) and self.agent.brain.has_gold:
                     game_over = True
 
-            
             self.draw_game(images, cell_size, self.agent, self.map)
             pygame.display.flip()
             self.clock.tick(FPS)

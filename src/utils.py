@@ -97,6 +97,7 @@ class Action(Enum):
     SHOOT = auto()
     GRAB_G = auto()
     GRAB_HP = auto()
+    CLIMB = auto()
 
 
 # Directions
