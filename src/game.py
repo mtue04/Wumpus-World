@@ -167,11 +167,13 @@ class Game:
 
             if not game_over:
                 # Get agent's perceptions
+                last_position = self.map.agent_position
                 current_cell = self.map.get_cell(*self.map.agent_position)
                 perceptions = self.agent.perceive(current_cell)
                 
                 # Agent makes a decision
                 action = self.agent.act(perceptions)
+                self.write_output(f"output/output{self.map_type + 1}.txt", action, last_position, self.agent)
 
                 # Update game state based on action
                 if action == Action.MOVE_FORWARD:
@@ -207,6 +209,7 @@ class Game:
 
                 # Check if agent wants to climb out
                 if self.map.agent_position == (9, 0) and self.agent.brain.has_gold:
+                    action = Action.CLIMB
                     game_over = True
 
             self.draw_game(images, cell_size, self.agent, self.map)
@@ -214,11 +217,8 @@ class Game:
             self.clock.tick(FPS)
 
         # Game over, display final score
+        self.write_output(f"output/output{self.map_type + 1}.txt", action, self.map.agent_position, self.agent, game_over=True)
         self.display_game_over()
-        
-        # Write output
-        # output_file = f"output{self.map_type + 1}.txt"
-        # self.agent_brain.write_output(output_file, self.agent.score)
 
     def load_images(self, cell_size):
         images = {
@@ -311,13 +311,43 @@ class Game:
         
         self.screen.blit(info_surface, (SCREEN_HEIGHT, 0))
 
+    def write_output(self, output_file: str, action: Action, position: Tuple[int, int], agent: Agent, game_over: bool = False):
+        x, y = position
+        transformed_position = (self.map.size - x, y + 1)
+        
+        action_str = {
+            Action.MOVE_FORWARD: "Move forward",
+            Action.TURN_LEFT: "Turn left",
+            Action.TURN_RIGHT: "Turn right",
+            Action.SHOOT: "Shoot",
+            Action.GRAB_G: "Grab gold",
+            Action.GRAB_HP: "Grab health potion",
+            Action.CLIMB: "Climb"
+        }.get(action, "Unknown action")
+
+        with open(output_file, "a") as f:
+            f.write(f"{transformed_position}: {action_str}\n")
+
+        # If the action is CLIMB, we assume the game has ended and we write the final score and health
+        if game_over and action == Action.CLIMB:
+            with open(output_file, "a") as f:
+                f.write("------------------------------\n")
+                f.write(f"SCORE: {agent.score}\n")
+                f.write(f"HEALTH: {agent.health}\n")
+        elif game_over:
+            with open(output_file, "a") as f:
+                f.write(f"Agent die in Wumpus World\n")
+                f.write("------------------------------\n")
+                f.write(f"SCORE: {agent.score}\n")
+                f.write(f"HEALTH: {agent.health}\n")
+
     def display_game_over(self):
         game_over_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
         game_over_surface.set_alpha(200)
         game_over_surface.fill(BLACK)
         self.screen.blit(game_over_surface, (0, 0))
 
-        game_over_text = self.title_font.render("GAME OVER", True, WHITE)
+        game_over_text = self.title_font.render("FINISH!", True, WHITE)
         game_over_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50))
         self.screen.blit(game_over_text, game_over_rect)
 

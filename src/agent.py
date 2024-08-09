@@ -9,10 +9,17 @@ class Agent:
 
         self.image = pygame.image.load(IMG_AGENT_UP).convert_alpha()
         self.image_list = self.load_images()
+        self.arrow_images = {
+            Direction.UP: pygame.image.load(IMG_ARROW_UP).convert_alpha(),
+            Direction.DOWN: pygame.image.load(IMG_ARROW_DOWN).convert_alpha(),
+            Direction.LEFT: pygame.image.load(IMG_ARROW_LEFT).convert_alpha(),
+            Direction.RIGHT: pygame.image.load(IMG_ARROW_RIGHT).convert_alpha(),
+        }
+        self.scream_image = pygame.image.load(IMG_SCREAM).convert_alpha()
         
         self.is_alive = True
-        self.score = 0
         self.health = 100
+        self.score = 0
     
     def load_images(self):
         return {
@@ -84,6 +91,8 @@ class Agent:
         target_position = self.get_forward_position()
         if self.map.is_valid_position(*target_position):
             target_cell = self.map.get_cell(*target_position)
+            self.visualize_arrow(target_position)
+            
             if Object.WUMPUS in target_cell.contents:
                 # Remove Wumpus from the cell
                 target_cell.contents.remove(Object.WUMPUS)
@@ -98,11 +107,12 @@ class Agent:
                 # Update brain's knowledge
                 self.brain.process_successful_shot(target_position)
                 
+                self.visualize_scream(target_position)
                 print("Wumpus killed!")
             else:
                 print("Missed! Try again!")
                 self.rotate_and_shoot()
-
+    
     def rotate_and_shoot(self):
         # Rotate to the right
         if self.brain.direction == Direction.UP:
@@ -118,6 +128,7 @@ class Agent:
         target_position = self.get_forward_position()
         if self.map.is_valid_position(*target_position):
             target_cell = self.map.get_cell(*target_position)
+            self.visualize_arrow(target_position)
             if Object.WUMPUS in target_cell.contents:
                 # Remove Wumpus from the cell
                 target_cell.contents.remove(Object.WUMPUS)
@@ -132,6 +143,7 @@ class Agent:
                 # Update brain's knowledge
                 self.brain.process_successful_shot(target_position)
                 
+                self.visualize_scream(target_position)
                 print("Re-shooting! Wumpus killed!")
             else:
                 print("Missed again!")
@@ -148,6 +160,7 @@ class Agent:
                 
                 # Shoot
                 target_position = self.get_forward_position()
+                self.visualize_arrow(target_position)
                 if self.map.is_valid_position(*target_position):
                     target_cell = self.map.get_cell(*target_position)
                     if Object.WUMPUS in target_cell.contents:
@@ -164,6 +177,7 @@ class Agent:
                         # Update brain's knowledge
                         self.brain.process_successful_shot(target_position)
                         
+                        self.visualize_scream(target_position)
                         print("Re-shooting! Wumpus killed!")
         
         else:
@@ -196,6 +210,44 @@ class Agent:
                     self.brain.process_successful_shot(target_position)
                     
                     print("Re-shooting! Wumpus killed!")
+
+    def visualize_arrow(self, target_position):
+        screen = pygame.display.get_surface()
+        cell_size = min(SCREEN_WIDTH, SCREEN_HEIGHT) // self.map.size
+        x, y = self.map.agent_position
+        target_x, target_y = target_position
+        
+        arrow_image = self.arrow_images[self.brain.direction]
+        arrow_rect = arrow_image.get_rect()
+        
+        # Calculate the position to draw the arrow
+        arrow_x = y * cell_size + (cell_size - arrow_rect.width) // 2
+        arrow_y = x * cell_size + (cell_size - arrow_rect.height) // 2
+        
+        # Draw the arrow
+        screen.blit(arrow_image, (arrow_x, arrow_y))
+        pygame.display.flip()
+        
+        # Delay to make the arrow visible
+        pygame.time.delay(500)
+    
+    def visualize_scream(self, target_position):
+        screen = pygame.display.get_surface()
+        cell_size = min(SCREEN_WIDTH, SCREEN_HEIGHT) // self.map.size
+        target_x, target_y = target_position
+
+        scream_rect = self.scream_image.get_rect()
+
+        # Calculate the position to draw the scream
+        scream_x = target_y * cell_size + (cell_size - scream_rect.width) // 2
+        scream_y = target_x * cell_size + (cell_size - scream_rect.height) // 2
+
+        # Draw the scream
+        screen.blit(self.scream_image, (scream_x, scream_y))
+        pygame.display.flip()
+
+        # Delay to make the glow visible
+        pygame.time.delay(500)
 
     def grab(self):
         x, y = self.map.agent_position

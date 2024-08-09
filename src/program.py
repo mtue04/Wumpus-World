@@ -64,29 +64,25 @@ class Map:
 
         self._add_perceptions() 
 
-    def _process_cell(self, x: int, y: int, char: str):
+    def _process_cell(self, x: int, y: int, cell_contents: str):
         cell = self.grid[x][y]
 
-        if char == "-":
-            cell.add_content(Object.EMPTY)
-        elif char == "W":
-            # self.wumpus_positions.append((x, y))
-            cell.add_content(Object.WUMPUS)
-        elif char == "P":
-            cell.add_content(Object.PIT)
-        elif char == "A":
-            self.agent_position = (x, y)
-            cell.add_content(Object.AGENT)
-        elif char == "G":
-            self.gold_positions.append((x, y))
-            cell.add_content(Object.GOLD)
-        elif char == "P_G":
-            cell.add_content(Object.POISONOUS_GAS)
-        elif char == "H_P":
-            self.healing_positions.append((x, y))
-            cell.add_content(Object.HEALING_POTIONS)
-        else:
-            raise ValueError(f"Invalid character: {char}")
+        for obj_str in cell_contents.split("/"):
+            if "W" == obj_str:
+                cell.add_content(Object.WUMPUS)
+            if "P" == obj_str:
+                cell.add_content(Object.PIT)
+            if "A" == obj_str:
+                self.agent_position = (x, y)
+                cell.add_content(Object.AGENT)
+            if "G" == obj_str:
+                self.gold_positions.append((x, y))
+                cell.add_content(Object.GOLD)
+            if "P_G" == obj_str:
+                cell.add_content(Object.POISONOUS_GAS)
+            if "H_P" == obj_str:
+                self.healing_positions.append((x, y))
+                cell.add_content(Object.HEALING_POTIONS)
 
     def _add_perceptions(self):
         for x in range(self.size):

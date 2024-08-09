@@ -1,0 +1,12 @@
+(1, 1): Move forward
+(2, 1): Turn right
+(2, 1): Move forward
+(1, 1): Turn left
+(1, 1): Move forward
+(1, 2): Turn left
+(1, 2): Move forward
+(2, 2): Move forward
+Agent die in Wumpus World
+------------------------------
+SCORE: -10070
+HEALTH: 100

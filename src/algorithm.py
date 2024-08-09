@@ -111,7 +111,6 @@ class AgentBrain:
             return Action.SHOOT
 
         safe_unvisited = self.safe_cells - self.visited_cells
-        # print("safe unvisited: ",safe_unvisited)
         if safe_unvisited:
             return self.move_towards_safe(safe_unvisited)
 
@@ -122,9 +121,26 @@ class AgentBrain:
 
         # Back to start
         if self.has_gold and self.map.agent_position == (self.map.size - 1, 0):
-            return self.CLIMB
+            return Action.CLIMB
 
         return self.backtrack()
+
+    def move_towards_safe(self, safe_cells: Set[Tuple[int, int]]) -> Action:
+        current_x, current_y = self.map.agent_position
+        for dx, dy in [(-1, 0), (0, 1), (1, 0), (0, -1)]:
+            target = (current_x + dx, current_y + dy)
+            if target in safe_cells and target not in self.last_positions:
+                return self.move_towards(target)
+
+        # If there is no safe cell around, move to the next safe cell
+        unvisited_safe = safe_cells - self.visited_cells
+        if unvisited_safe:
+            nearest_safe = min(unvisited_safe, key=lambda cell: self.manhattan_distance(self.map.agent_position, cell))
+            path = self.find_safe_path(self.map.agent_position, nearest_safe)
+            if path:
+                return self.move_towards(path[1])
+        
+        return self.move_towards(next(iter(safe_cells)))
 
     def move_towards_safe(self, safe_cells: Set[Tuple[int, int]]) -> Action:
         current_x, current_y = self.map.agent_position
@@ -203,16 +219,20 @@ class AgentBrain:
         dx = target[0] - self.map.agent_position[0]
         dy = target[1] - self.map.agent_position[1]
         
-        if dx > 0:  # Move down
-            return self.turn_to_direction(Direction.DOWN)
-        elif dx < 0:  # Move up
-            return self.turn_to_direction(Direction.UP)
-        elif dy < 0:  # Move left
-            return self.turn_to_direction(Direction.LEFT)
-        elif dy > 0:  # Move right
-            return self.turn_to_direction(Direction.RIGHT)
+        target_direction = None
+        if dx > 0:
+            target_direction = Direction.DOWN
+        elif dx < 0:
+            target_direction = Direction.UP
+        elif dy < 0:
+            target_direction = Direction.LEFT
+        elif dy > 0:
+            target_direction = Direction.RIGHT
 
-        return Action.MOVE_FORWARD
+        if target_direction is None:
+            return Action.MOVE_FORWARD
+
+        return self.turn_to_direction(target_direction)
 
     def turn_to_direction(self, target_direction: Direction) -> Action:
         if self.direction == target_direction:
@@ -233,8 +253,10 @@ class AgentBrain:
             (Direction.LEFT, Direction.DOWN): Action.TURN_LEFT,
         }
         
-        self.direction = target_direction
-        return turns.get((self.direction, target_direction), Action.MOVE_FORWARD)
+        turn_action = turns.get((self.direction, target_direction), Action.MOVE_FORWARD)
+        if turn_action != Action.MOVE_FORWARD:
+            self.direction = target_direction
+        return turn_action
 
     def process_successful_shot(self, wumpus_position: Tuple[int, int]):
         x, y = wumpus_position
@@ -277,16 +299,3 @@ class AgentBrain:
     
     def manhattan_distance(self, cell1: Tuple[int, int], cell2: Tuple[int, int]) -> int:
         return abs(cell1[0] - cell2[0]) + abs(cell1[1] - cell2[1])
-    
-    # def write_output(self, output_file: str, score: int):
-        # with open(output_file, "w") as f:
-        #     f.write(f"Score: {score}\n\n")
-        #     f.write("Safe cells:\n")
-        #     for cell in sorted(self.safe_cells):
-        #         f.write(f"{cell}\n")
-        #     f.write("\nDangerous cells:\n")
-        #     for cell in sorted(self.dangerous_cells):
-        #         f.write(f"{cell}\n")
-        #     f.write("\nVisited cells:\n")
-        #     for cell in sorted(self.visited_cells):
-        #         f.write(f"{cell}\n")
