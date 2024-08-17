@@ -233,7 +233,7 @@ class Game:
             'glow': pygame.image.load(IMG_GLOW).convert_alpha(),
             'stench': pygame.image.load(IMG_STENCH).convert_alpha(),
             'whiff': pygame.image.load(IMG_WHIFF).convert_alpha(),
-            'scream': pygame.image.load(IMG_SCREAM).convert_alpha()
+            'scream': pygame.image.load(IMG_SCREAM).convert_alpha(),
         }
         
         # Resize images
@@ -310,6 +310,26 @@ class Game:
         info_surface.blit(health_info, ((SCREEN_WIDTH - SCREEN_HEIGHT - health_info.get_width()) // 2, 250))
         
         self.screen.blit(info_surface, (SCREEN_HEIGHT, 0))
+        
+        # If agent has gold, display it
+        if self.agent.has_announce_gold:
+            gold_image = self.agent.img_announce_gold
+            gold_rect = gold_image.get_rect(center=((SCREEN_WIDTH + SCREEN_HEIGHT) // 2, SCREEN_HEIGHT - gold_image.get_height() // 2))
+            self.screen.blit(gold_image, gold_rect)
+
+            pygame.display.flip()
+            pygame.time.wait(2000)
+            self.agent.has_announce_gold = False
+        
+        # If wumpus is killed, display it
+        if self.agent.has_announce_wumpus:
+            wumpus_image = self.agent.img_announce_wumpus
+            wumpus_rect = wumpus_image.get_rect(center=((SCREEN_WIDTH + SCREEN_HEIGHT) // 2, SCREEN_HEIGHT - wumpus_image.get_height() // 2))
+            self.screen.blit(wumpus_image, wumpus_rect)
+
+            pygame.display.flip()
+            pygame.time.wait(2000)
+            self.agent.has_announce_wumpus = False
 
     def write_output(self, output_file: str, action: Action, position: Tuple[int, int], agent: Agent, game_over: bool = False):
         x, y = position

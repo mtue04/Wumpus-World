@@ -16,7 +16,12 @@ class Agent:
             Direction.RIGHT: pygame.image.load(IMG_ARROW_RIGHT).convert_alpha(),
         }
         self.scream_image = pygame.image.load(IMG_SCREAM).convert_alpha()
-        
+
+        self.has_announce_gold = False
+        self.has_announce_wumpus = False
+        self.img_announce_gold = pygame.image.load(IMG_ANNOUNCE_GOLD).convert_alpha()
+        self.img_announce_wumpus = pygame.image.load(IMG_ANNOUNCE_WUMPUS).convert_alpha()
+
         self.is_alive = True
         self.health = 100
         self.score = 0
@@ -61,6 +66,7 @@ class Agent:
             self.shoot()
         elif action == Action.GRAB_G:
             print("Grabbing gold")
+            self.has_announce_gold = True
             self.score += 5000
             self.grab()
         elif action == Action.GRAB_HP:
@@ -104,6 +110,9 @@ class Agent:
                     if Object.STENCH in adj_cell.contents:
                         adj_cell.contents.remove(Object.STENCH)
                 
+                # Update announce wumpus
+                self.has_announce_wumpus = True
+
                 # Update brain's knowledge
                 self.brain.process_successful_shot(target_position)
                 
@@ -140,6 +149,9 @@ class Agent:
                     if Object.STENCH in adj_cell.contents:
                         adj_cell.contents.remove(Object.STENCH)
                 
+                # Update announce wumpus
+                self.has_announce_wumpus = True
+
                 # Update brain's knowledge
                 self.brain.process_successful_shot(target_position)
                 
@@ -174,6 +186,9 @@ class Agent:
                             if Object.STENCH in adj_cell.contents:
                                 adj_cell.contents.remove(Object.STENCH)
                         
+                        # Update announce wumpus
+                        self.has_announce_wumpus = True
+
                         # Update brain's knowledge
                         self.brain.process_successful_shot(target_position)
                         
@@ -206,6 +221,9 @@ class Agent:
                         if Object.STENCH in adj_cell.contents:
                             adj_cell.contents.remove(Object.STENCH)
                     
+                    # Update announce wumpus
+                    self.has_announce_wumpus = True
+
                     # Update brain's knowledge
                     self.brain.process_successful_shot(target_position)
                     
@@ -245,7 +263,7 @@ class Agent:
         # Draw the scream
         screen.blit(self.scream_image, (scream_x, scream_y))
         pygame.display.flip()
-
+        
         # Delay to make the glow visible
         pygame.time.delay(500)
 

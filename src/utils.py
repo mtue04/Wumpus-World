@@ -64,6 +64,8 @@ IMG_ARROW_LEFT = "input/assets/arrow_left.png"
 IMG_ARROW_RIGHT = "input/assets/arrow_right.png"
 IMG_GAMEOVER = "input/assets/game_over.png"
 IMG_WIN = "input/assets/win_game.png"
+IMG_ANNOUNCE_GOLD = "input/assets/gold_announce.png"
+IMG_ANNOUNCE_WUMPUS = "input/assets/wumpus_die_announce.png"
 
 
 # Cell Types
